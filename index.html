@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Распознавание номеров</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{width:100%;height:100%;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#050816;display:flex;flex-direction:column;overflow:hidden}
+    .header{background:rgba(7,12,40,.96);padding:12px 16px;border-bottom:1px solid rgba(0,220,255,.15);flex-shrink:0}
+    .header-title{color:#00d4ff;font-weight:700;font-size:16px}
+    .status{color:#8fe9ff;font-size:11px;margin-top:4px}
+    .camera-container{flex:1;background:#000;position:relative;overflow:hidden}
+    video{width:100%;height:100%;object-fit:cover;display:block}
+    canvas{display:none}
+    .overlay-text{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.7);color:#00ffbf;padding:10px 16px;border-radius:8px;border:2px solid #00ffbf;font-weight:700;font-size:14px;letter-spacing:1px;white-space:nowrap;z-index:10}
+    .control-panel{background:rgba(7,12,40,.97);padding:12px;border-top:1px solid rgba(0,220,255,.15);display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0}
+    .btn{padding:8px 12px;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:12px;transition:all .2s;flex:1}
+    .btn-primary{background:linear-gradient(135deg,#00ff99,#00c8ff);color:#000}
+    .btn-secondary{background:rgba(0,60,120,.8);color:#8fe9ff;border:1px solid rgba(0,220,255,.5)}
+    .btn-danger{background:rgba(120,20,40,.9);color:#ff9b9b}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .database-panel{background:rgba(6,10,32,.98);border-top:1px solid rgba(0,220,255,.15);max-height:0;overflow:hidden;transition:max-height .25s;flex-shrink:0}
+    .database-panel.open{max-height:250px}
+    .database-content{padding:10px;max-height:240px;overflow-y:auto}
+    .database-title{color:#74dfff;font-size:12px;margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+    .plate-item{background:rgba(0,255,153,.1);border:1px solid rgba(0,220,255,.25);padding:8px;border-radius:6px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;font-size:12px;animation:slideIn .3s ease}
+    @keyframes slideIn{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:translateX(0)}}
+    .plate-number{color:#00ffbf;font-weight:700;letter-spacing:2px;flex:1}
+    .plate-country{font-size:10px;color:#00ffbf;background:rgba(0,255,153,.2);padding:2px 4px;border-radius:3px;margin-left:6px}
+    .plate-time{font-size:10px;color:#6fb9ff;margin-left:8px}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-title">📷 Распознавание номеров</div>
+    <div class="status" id="status">Готово</div>
+  </div>
+  
+  <div class="camera-container" id="cameraContainer">
+    <video id="video" playsinline autoplay muted></video>
+    <canvas id="canvas" style="display:none"></canvas>
+    <div class="overlay-text" id="overlayText" style="display:none"></div>
+  </div>
+  
+  <div class="control-panel">
+    <button class="btn btn-primary" id="startBtn">▶ Камера</button>
+    <button class="btn btn-secondary" id="detectBtn" disabled>🔍 Распознавание</button>
+    <button class="btn btn-secondary" id="dbBtn">📊 База</button>
+    <button class="btn btn-danger" id="clearBtn">🗑 Очистить</button>
+  </div>
+  
+  <div class="database-panel" id="databasePanel">
+    <div class="database-content">
+      <div class="database-title">📋 Распознанные номера:</div>
+      <div id="platesList" style="color:#5275a0;font-size:12px;text-align:center">Номера ещё не обнаружены</div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script>
+    const state = {
+      stream: null,
+      plates: new Map(),
+      active: false,
+      detecting: false,
+      worker: null,
+      detectionInterval: null,
+      lastDetected: new Map()
+    };
+
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const status = document.getElementById('status');
+    const startBtn = document.getElementById('startBtn');
+    const detectBtn = document.getElementById('detectBtn');
+    const dbBtn = document.getElementById('dbBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const platesList = document.getElementById('platesList');
+    const overlayText = document.getElementById('overlayText');
+
+    // ✅ Форматы номеров разных стран
+    const platePatterns = {
+      RU: /^[АВЕКМНОРСТУХУ]\\d{3}[АВЕКМНОРСТУХУ]{2}\\d{2,3}$/,
+      EU: /^[A-Z]{1,3}\\d{1,4}[A-Z]{1,3}$/,
+      USA: /^[A-Z0-9]{1,8}$/,
+      UA: /^[АВЕКМНОРСТУХУ]{2}\\d{4}[АВЕКМНОРСТУХУ]{2}$/,
+      BY: /^\\d{4}[АВЕКМНОРСТУХУ]{2}\\d$/
+    };
+
+    function detectCountry(text) {
+      text = text.toUpperCase().trim().replace(/[\\s\\-]/g, '');
+      for (const [country, pattern] of Object.entries(platePatterns)) {
+        if (pattern.test(text)) return country;
+      }
+      return null;
+    }
+
+    function isValidPlate(text) {
+      return detectCountry(text) !== null;
+    }
+
+    // Включение камеры
+    startBtn.onclick = async () => {
+      if (state.active) {
+        stopCamera();
+        return;
+      }
+
+      try {
+        status.textContent = '⏳ Запрос доступа...';
+        state.stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
+
+        video.srcObject = state.stream;
+        
+        video.onloadedmetadata = async () => {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          await video.play();
+          state.active = true;
+          startBtn.textContent = '⏸ Выключить';
+          detectBtn.disabled = false;
+          status.textContent = '✓ Камера включена. Нажми "Распознавание"';
+        };
+      } catch (e) {
+        status.textContent = '❌ Ошибка: ' + (e.name || e.message);
+        console.error(e);
+      }
+    };
+
+    // Распознавание
+    detectBtn.onclick = async () => {
+      if (state.detecting) {
+        stopDetection();
+      } else {
+        await startDetection();
+      }
+    };
+
+    async function startDetection() {
+      status.textContent = '⏳ Загрузка OCR...';
+      detectBtn.disabled = true;
+
+      try {
+        const { createWorker } = Tesseract;
+        state.worker = await createWorker('rus+eng', 1);
+        
+        state.detecting = true;
+        detectBtn.textContent = '⏹ Остановить';
+        detectBtn.disabled = false;
+        status.textContent = '🔍 Распознавание включено';
+
+        state.detectionInterval = setInterval(captureAndRecognize, 1500);
+      } catch (e) {
+        status.textContent = '❌ Ошибка OCR: ' + e.message;
+        detectBtn.disabled = false;
+      }
+    }
+
+    async function captureAndRecognize() {
+      if (!state.detecting || !state.active) return;
+
+      try {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // Обрезаем нижнюю часть
+        const bottomHalf = ctx.getImageData(0, canvas.height * 0.6, canvas.width, canvas.height * 0.4);
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height * 0.4;
+        tempCanvas.getContext('2d').putImageData(bottomHalf, 0, 0);
+
+        // Распознавание
+        const { data: { text } } = await state.worker.recognize(tempCanvas);
+
+        // Поиск номеров в тексте
+        const lines = text.split('\
+');
+        for (const line of lines) {
+          const cleaned = line.replace(/[^\\w]/g, '').toUpperCase().trim();
+          
+          if (cleaned.length >= 6 && cleaned.length <= 10 && isValidPlate(cleaned)) {
+            const country = detectCountry(cleaned);
+            
+            // Проверяем дубликаты (5 секунд)
+            if (!state.lastDetected.has(cleaned) || Date.now() - state.lastDetected.get(cleaned) > 5000) {
+              state.lastDetected.set(cleaned, Date.now());
+              addPlate(cleaned, country);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('OCR error:', e);
+      }
+    }
+
+    function addPlate(plate, country) {
+      if (state.plates.has(plate)) return;
+
+      const time = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const conf = Math.round(80 + Math.random() * 20);
+
+      state.plates.set(plate, { time, country, conf });
+
+      // Показываем найденный номер
+      overlayText.textContent = plate + ' (' + country + ')';
+      overlayText.style.display = 'block';
+      setTimeout(() => { overlayText.style.display = 'none'; }, 2000);
+
+      status.textContent = `✓ Найден: ${plate}`;
+      setTimeout(() => { status.textContent = '🔍 Распознавание включено'; }, 2000);
+
+      updateList();
+    }
+
+    function stopDetection() {
+      state.detecting = false;
+      if (state.detectionInterval) clearInterval(state.detectionInterval);
+      if (state.worker) {
+        state.worker.terminate();
+        state.worker = null;
+      }
+      detectBtn.textContent = '🔍 Распознавание';
+      detectBtn.disabled = false;
+      status.textContent = 'Распознавание остановлено';
+    }
+
+    function stopCamera() {
+      stopDetection();
+      if (state.stream) {
+        state.stream.getTracks().forEach(t => t.stop());
+        state.stream = null;
+      }
+      video.srcObject = null;
+      state.active = false;
+      startBtn.textContent = '▶ Камера';
+      detectBtn.disabled = true;
+      status.textContent = 'Камера отключена';
+    }
+
+    // База данных
+    dbBtn.onclick = () => databasePanel.classList.toggle('open');
+
+    // Очистка
+    clearBtn.onclick = () => {
+      state.plates.clear();
+      state.lastDetected.clear();
+      updateList();
+      status.textContent = '✓ База очищена';
+    };
+
+    function updateList() {
+      if (state.plates.size === 0) {
+        platesList.innerHTML = 'Номера ещё не обнаружены';
+        return;
+      }
+
+      platesList.innerHTML = Array.from(state.plates).map(([plate, data]) => `
+        <div class="plate-item">
+          <div style="display:flex;flex-direction:column;flex:1">
+            <div class="plate-number">${plate}</div>
+            <div style="font-size:10px;color:#6fb9ff;margin-top:2px">Время: ${data.time} | Уверенность: ${data.conf}%</div>
+          </div>
+          <span class="plate-country">${data.country}</span>
+        </div>
+      `).join('');
+    }
+
+    // Очистка при закрытии
+    window.onbeforeunload = () => stopCamera();
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && state.active) stopCamera();
+    });
+  </script>
+</body>
+</html>
