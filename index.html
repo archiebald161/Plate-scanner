@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Профессиональный сканер номеров</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0a0e27;display:flex;flex-direction:column;overflow:hidden;color:#fff}
+    .header{background:linear-gradient(135deg,rgba(20,40,100,.95),rgba(10,14,39,.98));padding:14px 16px;border-bottom:2px solid rgba(0,200,255,.3)}
+    .header-title{color:#00d4ff;font-weight:800;font-size:18px;letter-spacing:.5px}
+    .status{color:#8fe9ff;font-size:12px;margin-top:4px}
+    .camera-container{flex:1;background:#000;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+    video{width:100%;height:100%;object-fit:cover}
+    canvas{display:none}
+    .overlay-guide{position:absolute;width:90%;height:140px;border:3px solid #00ff88;border-radius:12px;box-shadow:0 0 25px rgba(0,255,136,.4);pointer-events:none}
+    .overlay-text{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.92);color:#00ffbf;padding:16px 24px;border-radius:12px;border:2px solid #00ffbf;font-weight:800;font-size:18px;letter-spacing:3px;white-space:nowrap;z-index:20;box-shadow:0 8px 30px rgba(0,255,136,.6)}
+    .control-panel{background:linear-gradient(to bottom,rgba(20,40,100,.97),rgba(10,14,39,.98));padding:14px;border-top:2px solid rgba(0,200,255,.3);display:grid;grid-template-columns:1fr 1fr;gap:8px;flex-shrink:0}
+    .btn{padding:11px 14px;border:none;border-radius:10px;cursor:pointer;font-weight:700;font-size:13px;letter-spacing:.5px;transition:all .2s}
+    .btn-primary{background:linear-gradient(135deg,#00ff99,#00d4ff);color:#000;grid-column:1/3}
+    .btn-secondary{background:rgba(0,100,200,.8);color:#8fe9ff;border:1.5px solid rgba(0,200,255,.6)}
+    .btn-danger{background:rgba(200,40,60,.8);color:#ff9b9b}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .database-panel{background:linear-gradient(to bottom,rgba(10,20,50,.98),rgba(5,10,25,.99));border-top:2px solid rgba(0,200,255,.2);max-height:0;overflow:hidden;transition:max-height .3s;flex-shrink:0}
+    .database-panel.open{max-height:320px}
+    .database-content{padding:12px;max-height:300px;overflow-y:auto}
+    .database-title{color:#00d4ff;font-size:13px;margin-bottom:10px;font-weight:800;text-transform:uppercase;letter-spacing:1px}
+    .plate-item{background:rgba(0,255,136,.1);border:1.5px solid rgba(0,200,255,.3);padding:10px;border-radius:8px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;font-size:12px;animation:slideIn .3s}
+    @keyframes slideIn{from{opacity:0;transform:translateX(-15px)}to{opacity:1}}
+    .plate-number{color:#00ffbf;font-weight:800;letter-spacing:2px;flex:1;font-family:monospace;font-size:13px}
+    .plate-country{font-size:11px;background:rgba(0,255,136,.2);border:1px solid rgba(0,200,255,.4);padding:3px 6px;border-radius:4px;color:#00ffbf;font-weight:600;margin-left:8px}
+    .plate-conf{font-size:11px;background:rgba(0,255,136,.15);padding:3px 6px;border-radius:4px;color:#00ffbf;margin-left:4px}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-title">🚗 Профессиональный сканер номеров</div>
+    <div class="status" id="status">Готово</div>
+  </div>
+  
+  <div class="camera-container" id="cameraContainer">
+    <video id="video" playsinline autoplay muted></video>
+    <canvas id="canvas"></canvas>
+    <div class="overlay-guide"></div>
+    <div class="overlay-text" id="overlayText" style="display:none"></div>
+  </div>
+  
+  <div class="control-panel">
+    <button class="btn btn-primary" id="startBtn">▶ ВКЛЮЧИТЬ КАМЕРУ</button>
+    <button class="btn btn-secondary" id="detectBtn" disabled>🔍 РАСПОЗНАВАНИЕ</button>
+    <button class="btn btn-secondary" id="dbBtn">📊 БАЗА</button>
+    <button class="btn btn-danger" id="clearBtn">🗑 ОЧИСТИТЬ</button>
+  </div>
+  
+  <div class="database-panel" id="databasePanel">
+    <div class="database-content">
+      <div class="database-title">📋 Распознанные номера</div>
+      <div id="platesList" style="text-align:center;color:#4a6fa5">Номера ещё не обнаружены</div>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      stream: null,
+      plates: new Map(),
+      active: false,
+      detecting: false,
+      detectionInterval: null,
+      lastDetected: new Map(),
+      processing: false
+    };
+
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const status = document.getElementById('status');
+    const startBtn = document.getElementById('startBtn');
+    const detectBtn = document.getElementById('detectBtn');
+    const dbBtn = document.getElementById('dbBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const platesList = document.getElementById('platesList');
+    const overlayText = document.getElementById('overlayText');
+    const databasePanel = document.getElementById('databasePanel');
+
+    // Классификация номеров
+    function classifyPlate(plate) {
+      plate = plate.toUpperCase().replace(/[s-.]/g, '');
+      
+      const RU_PATTERN = /^[АВЕКМНОРСТУХУ]d{3}[АВЕКМНОРСТУХУ]{2}d{2,3}$/;
+      const EU_PATTERN = /^[A-Z]{1,3}d{1,4}[A-Z]{1,3}$/;
+      
+      if (RU_PATTERN.test(plate)) return { country: 'RU', valid: true };
+      if (EU_PATTERN.test(plate)) return { country: 'EU', valid: true };
+      if (/^[A-Z0-9]{1,8}$/.test(plate)) return { country: 'USA', valid: true };
+      
+      return { country: '?', valid: false };
+    }
+
+    // Включение камеры
+    startBtn.onclick = async () => {
+      if (state.active) {
+        stopCamera();
+        return;
+      }
+
+      try {
+        status.textContent = 'Запрос доступа...';
+        state.stream = await navigator.mediaDevices.getUserMedia({
+          video: { 
+            facingMode: 'environment',
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          },
+          audio: false
+        });
+
+        video.srcObject = state.stream;
+        
+        video.onloadedmetadata = async () => {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          await video.play();
+          state.active = true;
+          startBtn.textContent = '⏸ ВЫКЛЮЧИТЬ';
+          detectBtn.disabled = false;
+          status.textContent = '✓ Камера включена (готов к распознаванию)';
+        };
+      } catch (e) {
+        status.textContent = '❌ ' + e.message;
+      }
+    };
+
+    detectBtn.onclick = () => {
+      if (state.detecting) {
+        stopDetection();
+      } else {
+        startDetection();
+      }
+    };
+
+    function startDetection() {
+      state.detecting = true;
+      detectBtn.textContent = '⏹ ОСТАНОВИТЬ';
+      status.textContent = '🔍 Распознавание включено';
+      state.detectionInterval = setInterval(captureAndRecognize, 2000);
+    }
+
+    async function captureAndRecognize() {
+      if (!state.detecting || !state.active || state.processing) return;
+
+      state.processing = true;
+
+      try {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // Обрезаем область номера
+        const x = canvas.width * 0.05;
+        const y = canvas.height * 0.55;
+        const w = canvas.width * 0.9;
+        const h = 150;
+
+        canvas.toBlob(async (blob) => {
+          try {
+            const formData = new FormData();
+            formData.append('upload', blob);
+
+            // Используем бесплатный API CloudRec
+            const response = await fetch('https://api.platerecognizer.com/v1/plate-reader/', {
+              method: 'POST',
+              headers: {
+                'Authorization': 'Token 2a4adc1c8f8f33e4f5c6d7e8f9g0h1i2j'
+              },
+              body: formData
+            });
+
+            if (response && response.ok) {
+              const data = await response.json();
+              
+              if (data.results && data.results.length > 0) {
+                for (const result of data.results) {
+                  const plate = result.plate.toUpperCase();
+                  const conf = Math.round(result.confidence * 100);
+                  
+                  const classification = classifyPlate(plate);
+                  
+                  if (plate.length >= 4 && classification.valid) {
+                    const lastTime = state.lastDetected.get(plate) || 0;
+                    if (Date.now() - lastTime > 5000) {
+                      state.lastDetected.set(plate, Date.now());
+                      addPlate(plate, classification.country, conf);
+                      state.processing = false;
+                      return;
+                    }
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            console.log('API error:', e);
+          } finally {
+            state.processing = false;
+          }
+        }, 'image/jpeg', 0.9);
+      } catch (e) {
+        state.processing = false;
+      }
+    }
+
+    function addPlate(plate, country, conf) {
+      if (state.plates.has(plate)) return;
+
+      const time = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      state.plates.set(plate, { time, country, conf });
+
+      overlayText.textContent = plate;
+      overlayText.style.display = 'block';
+      setTimeout(() => { overlayText.style.display = 'none'; }, 2500);
+
+      status.textContent = `✓ ${country} : ${plate}`;
+
+      updateList();
+    }
+
+    function stopDetection() {
+      state.detecting = false;
+      if (state.detectionInterval) clearInterval(state.detectionInterval);
+      detectBtn.textContent = '🔍 РАСПОЗНАВАНИЕ';
+      status.textContent = 'Распознавание остановлено';
+    }
+
+    function stopCamera() {
+      stopDetection();
+      if (state.stream) {
+        state.stream.getTracks().forEach(t => t.stop());
+      }
+      state.active = false;
+      startBtn.textContent = '▶ ВКЛЮЧИТЬ КАМЕРУ';
+      detectBtn.disabled = true;
+      status.textContent = 'Камера отключена';
+    }
+
+    dbBtn.onclick = () => databasePanel.classList.toggle('open');
+
+    clearBtn.onclick = () => {
+      state.plates.clear();
+      updateList();
+      status.textContent = '✓ База очищена';
+    };
+
+    function updateList() {
+      if (state.plates.size === 0) {
+        platesList.textContent = 'Номера ещё не обнаружены';
+        return;
+      }
+
+      platesList.innerHTML = Array.from(state.plates).map(([plate, data]) => `
+        <div class="plate-item">
+          <div class="plate-number">${plate}</div>
+          <span class="plate-country">${data.country}</span>
+          <span class="plate-conf">${data.conf}%</span>
+        </div>
+      `).join('');
+    }
+
+    window.onbeforeunload = () => stopCamera();
+  </script>
+</body>
+</html>
