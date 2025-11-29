@@ -1,0 +1,166 @@
+From: <Saved by Blink>
+Snapshot-Content-Location: https://ppl-ai-code-interpreter-files.s3.amazonaws.com/web/direct-files/283d2f245882d6c93218b77625ac9cca/e74c1ba6-26bf-49cb-82af-003725e233a8/0eb54730.html?rnd=1764445334069&utm_source=perplexity
+Subject: =?utf-8?Q?=D0=A1=D0=BA=D0=B0=D0=BD=D0=B5=D1=80=20=D0=BD=D0=BE=D0=BC=D0=B5?=
+ =?utf-8?Q?=D1=80=D0=BE=D0=B2?=
+Date: Sat, 29 Nov 2025 22:42:16 +0300
+MIME-Version: 1.0
+Content-Type: multipart/related;
+	type="text/html";
+	boundary="----MultipartBoundary--awwiI7YDm89pvJLTdDGZC88kcyNJDsejvYFObxboE9----"
+
+
+------MultipartBoundary--awwiI7YDm89pvJLTdDGZC88kcyNJDsejvYFObxboE9----
+Content-Type: text/html
+Content-ID: <frame-251F82D84942E8243D8EA5407F4521C7@mhtml.blink>
+Content-Transfer-Encoding: binary
+Content-Location: https://ppl-ai-code-interpreter-files.s3.amazonaws.com/web/direct-files/283d2f245882d6c93218b77625ac9cca/e74c1ba6-26bf-49cb-82af-003725e233a8/0eb54730.html?rnd=1764445334069&utm_source=perplexity
+
+<!DOCTYPE html><html lang="ru"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><link rel="stylesheet" type="text/css" href="cid:css-865e7478-d78a-4d79-b3c8-2d2824fe6ac3@mhtml.blink" />
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Сканер номеров</title>
+  
+</head>
+<body>
+  <div class="header">
+    <div class="header-content">
+      <div class="header-title">Сканер номеров</div>
+      <div class="status-badge">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Готово</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="camera-container" id="cameraContainer">
+    <video id="video" playsinline=""></video>
+    <div class="no-camera" id="noCameraMsg" style="display:none">
+      <p>📷 Камера не доступна</p>
+      <p style="font-size:11px;color:#5275a0">Разрешите доступ к камере в браузере</p>
+    </div>
+  </div>
+
+  <div class="control-panel">
+    <div class="controls-left">
+      <div class="zoom-control">
+        <span class="zoom-label">🔍 Зум</span>
+        <input type="range" id="zoomSlider" min="1" max="6" step="0.1" value="1">
+        <span id="zoomValue">1.0x</span>
+      </div>
+    </div>
+    <div class="controls-right">
+      <button class="btn btn-primary" id="startBtn">▶ Камера</button>
+      <button class="btn btn-secondary" id="addBtn">➕ Добавить</button>
+      <button class="btn btn-secondary" id="dbBtn">📊 База</button>
+      <button class="btn btn-danger" id="clearBtn">🗑 Очистить</button>
+    </div>
+  </div>
+
+  <div class="database-panel" id="databasePanel">
+    <div class="database-content">
+      <div class="database-title">Обнаруженные номера</div>
+      <div id="platesList" class="empty-database">Номера ещё не добавлены</div>
+    </div>
+  </div>
+
+  
+
+</body></html>
+------MultipartBoundary--awwiI7YDm89pvJLTdDGZC88kcyNJDsejvYFObxboE9----
+Content-Type: text/css
+Content-Transfer-Encoding: binary
+Content-Location: cid:css-865e7478-d78a-4d79-b3c8-2d2824fe6ac3@mhtml.blink
+
+@charset "utf-8";
+
+* { margin: 0px; padding: 0px; box-sizing: border-box; user-select: none; }
+
+html, body { width: 100%; height: 100%; overflow: hidden; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: rgb(5, 8, 22); }
+
+body { display: flex; flex-direction: column; background: radial-gradient(circle at center top, rgb(26, 43, 109) 0px, rgb(5, 8, 22) 55%); }
+
+.header { background: rgba(7, 12, 40, 0.96); backdrop-filter: blur(10px); padding: 12px 16px; border-bottom: 1px solid rgba(0, 220, 255, 0.15); box-shadow: rgba(0, 0, 0, 0.6) 0px 4px 20px; }
+
+.header-content { display: flex; justify-content: space-between; align-items: center; }
+
+.header-title { display: flex; align-items: center; gap: 8px; color: rgb(0, 212, 255); font-weight: 700; text-transform: uppercase; letter-spacing: 1px; font-size: 16px; }
+
+.header-title::before { content: "📷"; font-size: 20px; }
+
+.status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 40px; border: 1px solid rgba(0, 220, 255, 0.4); background: rgba(0, 40, 80, 0.75); font-size: 12px; color: rgb(143, 233, 255); }
+
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: rgb(0, 255, 136); animation: 1.6s ease-in-out 0s infinite normal none running pulse; }
+
+@keyframes pulse { 
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.4; }
+}
+
+.camera-container { flex: 1 1 0%; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; background: rgb(0, 0, 0); }
+
+video { width: 100%; height: 100%; object-fit: cover; transform-origin: center center; transition: transform 0.15s ease-out; }
+
+.no-camera { display: flex; flex-direction: column; align-items: center; justify-content: center; color: rgb(143, 233, 255); text-align: center; padding: 20px; }
+
+.no-camera p { font-size: 14px; margin-bottom: 10px; }
+
+.control-panel { background: rgba(7, 12, 40, 0.97); backdrop-filter: blur(10px); padding: 12px 14px 14px; border-top: 1px solid rgba(0, 220, 255, 0.15); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; box-shadow: rgba(0, 0, 0, 0.7) 0px -4px 22px; }
+
+.controls-left, .controls-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.zoom-control { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; background: radial-gradient(circle at left top, rgba(0, 255, 153, 0.16), rgba(0, 40, 80, 0.85)); border: 1px solid rgba(0, 220, 255, 0.3); }
+
+.zoom-label { font-size: 12px; color: rgb(143, 233, 255); font-weight: 600; }
+
+#zoomSlider { width: 130px; appearance: none; height: 4px; border-radius: 999px; background: linear-gradient(90deg, rgba(0, 255, 153, 0.2), rgba(0, 220, 255, 0.6)); outline: none; }
+
+#zoomSlider::-webkit-slider-thumb { appearance: none; width: 18px; height: 18px; border-radius: 50%; background: radial-gradient(circle, rgb(255, 255, 255) 0px, rgb(0, 255, 191) 55%, rgb(0, 200, 255) 100%); box-shadow: rgba(0, 220, 255, 0.8) 0px 0px 14px; border: none; }
+
+#zoomValue { font-size: 12px; color: rgb(196, 247, 255); font-weight: 600; min-width: 32px; text-align: right; }
+
+.btn { border: none; border-radius: 999px; font-size: 12px; font-weight: 650; letter-spacing: 0.4px; padding: 9px 14px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; transition: transform 0.1s ease-out, box-shadow 0.15s ease-out; white-space: nowrap; }
+
+.btn-primary { background: linear-gradient(135deg, rgb(0, 255, 153), rgb(0, 200, 255)); color: rgb(2, 6, 17); box-shadow: rgba(0, 255, 153, 0.6) 0px 4px 18px; }
+
+.btn-secondary { background: rgba(0, 60, 120, 0.8); color: rgb(143, 233, 255); border: 1px solid rgba(0, 220, 255, 0.5); }
+
+.btn-danger { background: rgba(120, 20, 40, 0.9); color: rgb(255, 155, 155); border: 1px solid rgba(255, 100, 130, 0.7); }
+
+.btn:active { transform: scale(0.97); }
+
+.database-panel { background: rgba(6, 10, 32, 0.98); border-top: 1px solid rgba(0, 220, 255, 0.18); max-height: 0px; overflow: hidden; transition: max-height 0.25s ease-out; }
+
+.database-panel.open { max-height: 280px; }
+
+.database-content { padding: 10px 14px 12px; max-height: 260px; overflow-y: auto; }
+
+.database-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.9px; color: rgb(116, 223, 255); margin-bottom: 8px; }
+
+.plate-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-radius: 8px; background: radial-gradient(circle at left center, rgba(0, 255, 153, 0.15), rgba(0, 15, 40, 0.9)); border: 1px solid rgba(0, 220, 255, 0.25); margin-bottom: 6px; animation: 0.3s ease 0s 1 normal none running slideIn; }
+
+@keyframes slideIn { 
+  0% { opacity: 0; transform: translateX(-10px); }
+  100% { opacity: 1; transform: translateX(0px); }
+}
+
+.plate-number { font-family: "SF Mono", "Courier New", monospace; color: rgb(0, 255, 191); font-weight: 700; letter-spacing: 2px; font-size: 14px; flex: 1 1 0%; }
+
+.plate-time { font-size: 11px; color: rgb(111, 185, 255); margin: 0px 10px; min-width: 50px; }
+
+.plate-confidence { font-size: 11px; color: rgb(0, 255, 191); padding: 2px 6px; border-radius: 999px; background: rgba(0, 255, 153, 0.15); border: 1px solid rgba(0, 255, 153, 0.65); }
+
+.empty-database { text-align: center; color: rgb(82, 117, 160); font-size: 12px; padding: 12px 0px; }
+
+.toast { position: fixed; bottom: 16px; right: 16px; background: rgba(0, 255, 153, 0.96); color: rgb(2, 6, 17); padding: 10px 16px; border-radius: 12px; font-size: 12px; font-weight: 650; box-shadow: rgba(0, 0, 0, 0.7) 0px 8px 24px; z-index: 999; animation: 0.28s ease-out 0s 1 normal none running toastIn; }
+
+@keyframes toastIn { 
+  0% { transform: translateY(40px); opacity: 0; }
+  100% { transform: translateY(0px); opacity: 1; }
+}
+
+@media (max-width: 480px) {
+  .header-title { font-size: 14px; }
+  .control-panel { flex-direction: column; align-items: flex-start; }
+  .controls-left, .controls-right { width: 100%; justify-content: space-between; }
+}
+------MultipartBoundary--awwiI7YDm89pvJLTdDGZC88kcyNJDsejvYFObxboE9------
