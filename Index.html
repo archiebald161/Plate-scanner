@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Сканер номеров</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{width:100%;height:100%;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#050816;display:flex;flex-direction:column;overflow:hidden}
+    .header{background:rgba(7,12,40,.96);padding:12px 16px;border-bottom:1px solid rgba(0,220,255,.15)}
+    .header-title{color:#00d4ff;font-weight:700;font-size:16px}
+    .status{color:#8fe9ff;font-size:11px;margin-top:4px}
+    .camera-container{flex:1;background:#000;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden}
+    video{width:100%;height:100%;object-fit:cover;display:block}
+    .no-camera{color:#8fe9ff;text-align:center;padding:20px}
+    .control-panel{background:rgba(7,12,40,.97);padding:12px;border-top:1px solid rgba(0,220,255,.15);display:flex;gap:8px;flex-wrap:wrap}
+    .btn{padding:8px 12px;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:12px;white-space:nowrap}
+    .btn-primary{background:linear-gradient(135deg,#00ff99,#00c8ff);color:#000}
+    .btn-secondary{background:rgba(0,60,120,.8);color:#8fe9ff;border:1px solid rgba(0,220,255,.5)}
+    .btn-danger{background:rgba(120,20,40,.9);color:#ff9b9b;border:1px solid rgba(255,100,130,.7)}
+    .database-panel{background:rgba(6,10,32,.98);max-height:0;overflow:hidden;transition:max-height .25s}
+    .database-panel.open{max-height:250px}
+    .database-content{padding:10px;max-height:240px;overflow-y:auto}
+    .plate-item{background:rgba(0,255,153,.1);border:1px solid rgba(0,220,255,.25);padding:8px;border-radius:6px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;font-size:13px}
+    .plate-number{color:#00ffbf;font-weight:700;letter-spacing:1px}
+    .plate-time{font-size:11px;color:#6fb9ff;margin:0 8px}
+    .plate-confidence{font-size:11px;color:#00ffbf;background:rgba(0,255,153,.15);padding:2px 6px;border-radius:4px}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-title">📷 Сканер номеров</div>
+    <div class="status" id="status">Готово</div>
+  </div>
+  
+  <div class="camera-container" id="cameraContainer">
+    <video id="video" playsinline autoplay muted></video>
+    <div class="no-camera" id="noCamera" style="display:none">📷 Камера недоступна</div>
+  </div>
+  
+  <div class="control-panel">
+    <button class="btn btn-primary" id="startBtn">▶ Камера</button>
+    <button class="btn btn-secondary" id="addBtn">➕ Добавить</button>
+    <button class="btn btn-secondary" id="dbBtn">📊 База</button>
+    <button class="btn btn-danger" id="clearBtn">🗑 Очистить</button>
+  </div>
+  
+  <div class="database-panel" id="databasePanel">
+    <div class="database-content">
+      <div style="color:#74dfff;font-size:12px;margin-bottom:8px;font-weight:600">Номера:</div>
+      <div id="platesList" style="color:#5275a0;font-size:12px">Нет номеров</div>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      stream: null,
+      plates: [],
+      active: false
+    };
+
+    const video = document.getElementById('video');
+    const noCamera = document.getElementById('noCamera');
+    const status = document.getElementById('status');
+    const startBtn = document.getElementById('startBtn');
+    const addBtn = document.getElementById('addBtn');
+    const dbBtn = document.getElementById('dbBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const databasePanel = document.getElementById('databasePanel');
+    const platesList = document.getElementById('platesList');
+
+    startBtn.onclick = async () => {
+      if (state.active) {
+        stopCamera();
+        return;
+      }
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        status.textContent = 'Ошибка: камера не поддерживается';
+        return;
+      }
+
+      try {
+        status.textContent = 'Запрос доступа к камере...';
+        
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
+
+        state.stream = stream;
+        video.srcObject = stream;
+
+        // Явно запуск видео
+        video.onloadedmetadata = () => {
+          video.play().catch(err => {
+            console.error('Play error:', err);
+            status.textContent = 'Ошибка воспроизведения';
+          });
+        };
+
+        state.active = true;
+        video.style.display = 'block';
+        noCamera.style.display = 'none';
+        startBtn.textContent = '⏸ Выключить';
+        status.textContent = 'Камера включена';
+      } catch (e) {
+        console.error('Camera error:', e);
+        status.textContent = 'Ошибка: ' + e.message;
+        video.style.display = 'none';
+        noCamera.style.display = 'flex';
+      }
+    };
+
+    function stopCamera() {
+      if (state.stream) {
+        state.stream.getTracks().forEach(track => track.stop());
+        state.stream = null;
+      }
+      video.srcObject = null;
+      state.active = false;
+      startBtn.textContent = '▶ Камера';
+      status.textContent = 'Камера отключена';
+    }
+
+    addBtn.onclick = () => {
+      const pool = ['А123БВ78', 'В456ГД77', 'Е789ЖЗ99', 'И012КЛ45', 'М345НО66', 'П678РС77', 'Т901УФ88', 'У123ФХ12'];
+      const plate = pool[Math.floor(Math.random() * pool.length)];
+      const time = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const conf = Math.round(70 + Math.random() * 25);
+
+      if (!state.plates.some(p => p.plate === plate)) {
+        state.plates.unshift({ plate, time, conf });
+        if (state.plates.length > 50) state.plates.pop();
+        updateList();
+        status.textContent = '✓ Номер добавлен: ' + plate;
+        setTimeout(() => { status.textContent = ''; }, 2000);
+      }
+    };
+
+    dbBtn.onclick = () => databasePanel.classList.toggle('open');
+
+    clearBtn.onclick = () => {
+      state.plates = [];
+      updateList();
+      status.textContent = '✓ База очищена';
+      setTimeout(() => { status.textContent = ''; }, 2000);
+    };
+
+    function updateList() {
+      if (state.plates.length === 0) {
+        platesList.innerHTML = 'Нет номеров';
+        return;
+      }
+      platesList.innerHTML = state.plates.map(p => `
+        <div class="plate-item">
+          <div class="plate-number">${p.plate}</div>
+          <div class="plate-time">${p.time}</div>
+          <div class="plate-confidence">${p.conf}%</div>
+        </div>
+      `).join('');
+    }
+
+    window.onbeforeunload = () => {
+      stopCamera();
+    };
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && state.active) {
+        stopCamera();
+      }
+    });
+  </script>
+</body>
+</html>
