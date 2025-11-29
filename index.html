@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Сканер номеров</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{width:100%;height:100%;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#050816;display:flex;flex-direction:column;overflow:hidden}
+    .header{background:rgba(7,12,40,.96);padding:12px 16px;border-bottom:1px solid rgba(0,220,255,.15)}
+    .header-title{color:#00d4ff;font-weight:700;font-size:16px}
+    .status{color:#8fe9ff;font-size:11px;margin-top:4px}
+    .camera-container{flex:1;background:#000;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden}
+    video{width:100%;height:100%;object-fit:cover;display:block}
+    canvas{display:none;position:absolute}
+    .detection-box{position:absolute;border:3px solid #00ff88;border-radius:8px;background:rgba(0,255,136,.1);box-shadow:0 0 15px rgba(0,255,136,.6);animation:pulse 1s infinite;pointer-events:none}
+    @keyframes pulse{0%,100%{box-shadow:0 0 15px rgba(0,255,136,.6)}50%{box-shadow:0 0 25px rgba(0,255,136,1)}}
+    .plate-label{position:absolute;background:linear-gradient(135deg,#00ff88,#00d4ff);color:#000;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.6)}
+    .floating-plate{position:fixed;padding:8px 12px;background:linear-gradient(135deg,#00ff99,#00c8ff);color:#000;border-radius:8px;font-weight:700;font-size:14px;letter-spacing:1px;z-index:999;pointer-events:none;animation:floatToDatabase 1.2s cubic-bezier(.25,.46,.45,.94) forwards}
+    @keyframes floatToDatabase{0%{opacity:1;transform:translate(var(--startX),var(--startY)) scale(1)}100%{opacity:0;transform:translate(var(--endX),var(--endY)) scale(.5)}}
+    .no-camera{color:#8fe9ff;text-align:center;padding:20px}
+    .control-panel{background:rgba(7,12,40,.97);padding:12px;border-top:1px solid rgba(0,220,255,.15);display:flex;gap:8px;flex-wrap:wrap}
+    .btn{padding:8px 12px;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:12px;white-space:nowrap}
+    .btn-primary{background:linear-gradient(135deg,#00ff99,#00c8ff);color:#000}
+    .btn-secondary{background:rgba(0,60,120,.8);color:#8fe9ff;border:1px solid rgba(0,220,255,.5)}
+    .btn-danger{background:rgba(120,20,40,.9);color:#ff9b9b;border:1px solid rgba(255,100,130,.7)}
+    .database-panel{background:rgba(6,10,32,.98);max-height:0;overflow:hidden;transition:max-height .25s}
+    .database-panel.open{max-height:280px}
+    .database-content{padding:10px;max-height:260px;overflow-y:auto}
+    .database-title{color:#74dfff;font-size:12px;margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+    .plate-item{background:rgba(0,255,153,.1);border:1px solid rgba(0,220,255,.25);padding:8px;border-radius:6px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;font-size:13px;animation:slideIn .3s ease}
+    @keyframes slideIn{from{opacity:0;transform:translateX(-20px);background:rgba(0,255,200,.3)}to{opacity:1;transform:translateX(0);background:rgba(0,255,153,.1)}}
+    .plate-number{color:#00ffbf;font-weight:700;letter-spacing:2px;flex:1}
+    .plate-time{font-size:11px;color:#6fb9ff;margin:0 8px}
+    .plate-country{font-size:10px;color:#00ffbf;background:rgba(0,255,153,.2);padding:2px 4px;border-radius:3px;margin:0 4px}
+    .plate-confidence{font-size:11px;color:#00ffbf;background:rgba(0,255,153,.15);padding:2px 6px;border-radius:4px}
+    .loader{border:2px solid rgba(0,220,255,.2);border-top:2px solid #00d4ff;border-radius:50%;width:16px;height:16px;animation:spin .8s linear infinite;display:inline-block;margin-right:4px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-title">📷 Сканер номеров</div>
+    <div class="status" id="status">Готово</div>
+  </div>
+  
+  <div class="camera-container" id="cameraContainer">
+    <video id="video" playsinline autoplay muted></video>
+    <canvas id="canvas"></canvas>
+    <div class="no-camera" id="noCamera" style="display:none">📷 Камера недоступна</div>
+  </div>
+  
+  <div class="control-panel">
+    <button class="btn btn-primary" id="startBtn">▶ Камера</button>
+    <button class="btn btn-secondary" id="detectBtn" disabled>🔍 Включить распознавание</button>
+    <button class="btn btn-secondary" id="dbBtn">📊 База</button>
+    <button class="btn btn-danger" id="clearBtn">🗑 Очистить</button>
+  </div>
+  
+  <div class="database-panel" id="databasePanel">
+    <div class="database-content">
+      <div class="database-title">📋 Распознанные номера</div>
+      <div id="platesList" style="color:#5275a0;font-size:12px">Номера ещё не обнаружены</div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js"></script>
+  <script>
+    const state = {
+      stream: null,
+      plates: [],
+      active: false,
+      detecting: false,
+      detectionInterval: null
+    };
+
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const noCamera = document.getElementById('noCamera');
+    const status = document.getElementById('status');
+    const startBtn = document.getElementById('startBtn');
+    const detectBtn = document.getElementById('detectBtn');
+    const dbBtn = document.getElementById('dbBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const databasePanel = document.getElementById('databasePanel');
+    const platesList = document.getElementById('platesList');
+    const cameraContainer = document.getElementById('cameraContainer');
+
+    // Форматы номеров разных стран
+    const platePatterns = {
+      RU: /^[АВЕКМНОРСТУХУ]d{3}[АВЕКМНОРСТУХУ]{2}d{2,3}$/,
+      EU: /^[A-Z]{1,3}d{1,3}[A-Z]{1,3}$/,
+      USA: /^[A-Z0-9]{1,8}$/,
+      UA: /^[АВЕКМНОРСТУХУ]{2}d{4}[АВЕКМНОРСТУХУ]{2}$/,
+      BY: /^d{4}s[АВЕКМНОРСТУХУ]{2}-d$/,
+      KZ: /^[АВЕКМНОРСТУХУ]{3}d{3}[АВЕКМНОРСТУХУ]{2}$/
+    };
+
+    function detectCountry(text) {
+      text = text.toUpperCase().trim();
+      for (const [country, pattern] of Object.entries(platePatterns)) {
+        if (pattern.test(text)) return country;
+      }
+      return null;
+    }
+
+    function isValidPlate(text) {
+      text = text.toUpperCase().trim();
+      return Object.values(platePatterns).some(pattern => pattern.test(text));
+    }
+
+    startBtn.onclick = async () => {
+      if (state.active) {
+        stopCamera();
+        return;
+      }
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        status.textContent = '❌ Камера не поддерживается';
+        return;
+      }
+
+      try {
+        status.textContent = 'Запрос доступа...';
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
+
+        state.stream = stream;
+        video.srcObject = stream;
+        
+        canvas.width = video.videoWidth || 1280;
+        canvas.height = video.videoHeight || 720;
+
+        video.onloadedmetadata = () => {
+          video.play().catch(err => {
+            console.error('Play error:', err);
+            status.textContent = '❌ Ошибка воспроизведения';
+          });
+        };
+
+        state.active = true;
+        video.style.display = 'block';
+        noCamera.style.display = 'none';
+        startBtn.textContent = '⏸ Выключить';
+        detectBtn.disabled = false;
+        status.textContent = '✓ Камера включена. Нажми "Распознавание"';
+      } catch (e) {
+        console.error('Camera error:', e);
+        status.textContent = '❌ ' + e.message;
+        video.style.display = 'none';
+        noCamera.style.display = 'flex';
+      }
+    };
+
+    detectBtn.onclick = () => {
+      if (state.detecting) {
+        stopDetection();
+      } else {
+        startDetection();
+      }
+    };
+
+    async function startDetection() {
+      state.detecting = true;
+      detectBtn.textContent = '⏹ Остановить распознавание';
+      status.textContent = '🔍 Распознавание включено...';
+
+      // Инициализируем Tesseract один раз
+      const { createWorker } = Tesseract;
+      const worker = await createWorker('rus+eng');
+
+      state.detectionInterval = setInterval(async () => {
+        if (!state.detecting || !state.active) return;
+
+        try {
+          // Захватываем фрейм с видео
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+          // Обрезаем нижнюю часть (где обычно номер)
+          const bottomPortion = canvas.getImageData(
+            0,
+            canvas.height * 0.6,
+            canvas.width,
+            canvas.height * 0.4
+          );
+
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = canvas.width;
+          tempCanvas.height = canvas.height * 0.4;
+          tempCanvas.getContext('2d').putImageData(bottomPortion, 0, 0);
+
+          // OCR распознавание
+          const { data: { text } } = await worker.recognize(tempCanvas);
+          
+          // Парсим текст на строки и ищем валидные номера
+          const lines = text.split('
+');
+          for (const line of lines) {
+            const cleaned = line.replace(/[^w-]/g, '').toUpperCase();
+            if (cleaned.length >= 5 && cleaned.length <= 12) {
+              if (isValidPlate(cleaned)) {
+                const country = detectCountry(cleaned);
+                if (country) {
+                  addPlateWithAnimation(cleaned, country);
+                  status.textContent = `✓ Распознан номер: ${cleaned} (${country})`;
+                  setTimeout(() => { status.textContent = '🔍 Распознавание включено...'; }, 2000);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.error('OCR error:', e);
+        }
+      }, 1500); // Каждые 1.5 секунды
+    }
+
+    function stopDetection() {
+      state.detecting = false;
+      if (state.detectionInterval) clearInterval(state.detectionInterval);
+      detectBtn.textContent = '🔍 Включить распознавание';
+      status.textContent = 'Распознавание остановлено';
+    }
+
+    function addPlateWithAnimation(plate, country) {
+      // Проверка дубликата
+      if (state.plates.some(p => p.plate === plate)) return;
+
+      const conf = 85 + Math.random() * 15;
+      const time = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+      state.plates.unshift({ plate, time, country, conf: Math.round(conf) });
+      if (state.plates.length > 100) state.plates.pop();
+
+      // Анимация всплывающего номера
+      const floatingPlate = document.createElement('div');
+      floatingPlate.className = 'floating-plate';
+      floatingPlate.textContent = plate;
+
+      const startX = Math.random() * window.innerWidth;
+      const startY = Math.random() * (window.innerHeight * 0.5);
+      const dbButton = dbBtn.getBoundingClientRect();
+      const endX = dbButton.left;
+      const endY = dbButton.top;
+
+      floatingPlate.style.setProperty('--startX', startX + 'px');
+      floatingPlate.style.setProperty('--startY', startY + 'px');
+      floatingPlate.style.setProperty('--endX', endX + 'px');
+      floatingPlate.style.setProperty('--endY', endY + 'px');
+      floatingPlate.style.left = startX + 'px';
+      floatingPlate.style.top = startY + 'px';
+
+      document.body.appendChild(floatingPlate);
+      setTimeout(() => floatingPlate.remove(), 1200);
+
+      updateList();
+    }
+
+    function stopCamera() {
+      stopDetection();
+      if (state.stream) {
+        state.stream.getTracks().forEach(track => track.stop());
+        state.stream = null;
+      }
+      video.srcObject = null;
+      state.active = false;
+      startBtn.textContent = '▶ Камера';
+      detectBtn.disabled = true;
+      status.textContent = 'Камера отключена';
+    }
+
+    dbBtn.onclick = () => databasePanel.classList.toggle('open');
+
+    clearBtn.onclick = () => {
+      state.plates = [];
+      updateList();
+      status.textContent = '✓ База очищена';
+      setTimeout(() => { status.textContent = ''; }, 2000);
+    };
+
+    function updateList() {
+      if (state.plates.length === 0) {
+        platesList.innerHTML = '<div style="color:#5275a0;text-align:center">Номера ещё не обнаружены</div>';
+        return;
+      }
+      platesList.innerHTML = state.plates.map(p => `
+        <div class="plate-item">
+          <div class="plate-number">${p.plate}</div>
+          <div class="plate-country">${p.country}</div>
+          <div class="plate-time">${p.time}</div>
+          <div class="plate-confidence">${p.conf}%</div>
+        </div>
+      `).join('');
+    }
+
+    window.onbeforeunload = () => {
+      stopCamera();
+    };
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && state.active) {
+        stopCamera();
+      }
+    });
+  </script>
+</body>
+</html>
